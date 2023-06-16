@@ -1,7 +1,7 @@
 # control_theory_fly_pursuit
 Rotation work for Chiappe Lab
 
-Folder descriptions
+<h2> Folder descriptions </h2>
 
 gif_images: dump of images from animations that then together form a gif
 
@@ -14,8 +14,7 @@ real_flies: similar to playground_figs but applied to real experimentally-contro
 misc_docs: poster figures, final posters and other misc docs
 
 
-
-File descriptions
+<h2> File descriptions </h2>
 
 learning_PIDs.py: first implementations of P,I,D architectures based on sources online
 
