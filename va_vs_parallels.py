@@ -24,7 +24,7 @@ plt.rcParams['font.serif'] = 'Ubuntu'
 plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
-fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_pursuit/'
+fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
 
 # %% Helper functions
 
@@ -136,10 +136,10 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 lead_lag_va = 0
 lead_lag_vs = 0
 # coordinate referential
-ref_vec = np.array([0.01,0])
+ref_vec = np.array([0.01,0]) # important that first value is small
 
 # Defines whether you load an experimental path or pre-programmed
-exp = True
+exp = False
 data_path = fd_path + 'real_flies/data/parallel/sps_prof1.npy'
 fly_pos_path = fd_path + 'real_flies/data/parallel/fly_pos_prof1.npy'
 
@@ -171,16 +171,17 @@ elif exp == False:
     t = 10 # seconds
     n_updates = 200
     ts = np.linspace(0,t,n_updates)
+    frame_len = ts[1]
 
     # playground dimensions
-    dim_x = 400
+    dim_x = 200
     dim_y = 300
 
     # pre-programmed paths (must begin and end at same point)
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'circle'
+    traj =  'square_wave'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -199,7 +200,7 @@ elif exp == False:
         sps[0,:] = np.linspace(0,dim_x, num=n_updates)  
 
         # jitter
-        noise_sigma = 3
+        noise_sigma = 10*frame_len # 10 mm/s to mm/frame_len
         sps[1,:] = np.random.normal(dim_y/2,noise_sigma,n_updates)
         
     # circle
@@ -232,10 +233,14 @@ elif exp == False:
 if lead_lag_va != 0:
     sps_va = np.roll(sps,-lead_lag_va)
     sps_va = lead_lag_wrapping(sps_va, lead_lag_va)
+else:
+    sps_va = sps
 
 if lead_lag_vs != 0:
     sps_vs = np.roll(sps,-lead_lag_vs)
     sps_vs = lead_lag_wrapping(sps_vs, lead_lag_vs)
+else:
+    sps_vs = sps
 
 # %% Run simulation 
 
@@ -265,11 +270,13 @@ P_vs = np.zeros(n_updates)
 I_vs = np.zeros(n_updates) 
 
 # Velocity for pursuer
-vel_ratio = 0.8 # <1 means slower than target, >1 means faster
+vel_ratio = 0.7 # <1 means slower than target, >1 means faster
+
 t_vel = get_velocity(sps)
 t_vel[-1] = t_vel[-2]
+
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [dim_x/2,0] # initial position X,Y
+p_pos[:,0] = [0,0] # initial position X,Y
 
 # Biological limits to the movement
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
@@ -278,13 +285,12 @@ va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 # PID settings for v_a
 Kp = 1
 Ki = 0
-Kd = 0.5
-win_size = 50
-# int_windup_reset = True # TODO implement this
+Kd = 0.2
+win_size = 10
 
 # PID settings for v_s
-Kp_vs = 1
-Ki_vs = 0.5
+Kp_vs = 0
+Ki_vs = 0
 Kd_vs = 0
 
 if animate == True:
@@ -360,27 +366,28 @@ for i in range(n_updates):
     P_vs[i] = P_v
     I_vs[i] = I_v
 
-# Animation stuff
-if animate == True:
-    
-    axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6)
+    # Animation stuff
+    if animate == True:
+        
+        axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6)
 
-    axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6)
+        axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6)
 
-    axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6)
+        if exp == True:
+            axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6)
 
-    axes.set_xlim([-20, dim_x+20])
-    axes.set_ylim([-20, dim_y+20])
-    axes.patch.set_facecolor('k')
-    fig.patch.set_facecolor('k')
-    axes.axis('off')
-    plt.pause(0.0001)
-    fig.canvas.draw()
+        axes.set_xlim([-20, dim_x+20])
+        axes.set_ylim([-20, dim_y+20])
+        axes.patch.set_facecolor('k')
+        fig.patch.set_facecolor('k')
+        axes.axis('off')
+        plt.pause(0.01)
+        fig.canvas.draw()
 
-    filename= fd_path+'gif_images/'+str(1000+i)+'.png'
-    plt.savefig(filename)
-    images.append(imageio.imread(filename))
-    axes.clear()
+        filename= fd_path+'gif_images/'+str(1000+i)+'.png'
+        plt.savefig(filename)
+        images.append(imageio.imread(filename))
+        axes.clear()
 
 if animate == True:
     imageio.mimsave(fd_path + 'playground_figs/' + 'pursuit.gif', images)
@@ -456,7 +463,4 @@ elif exp == False:
 os.makedirs(path, exist_ok=True)
 fig.savefig(path + params)
 
-# %% 
-
-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
-
+# %%

@@ -24,7 +24,7 @@ plt.rcParams['font.serif'] = 'Ubuntu'
 plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
-fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_pursuit/'
+fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
 
 # %% Helper functions
 
@@ -107,7 +107,7 @@ lead_lag = 0
 ref_vec = np.array([0.01,0])
 
 # Defines whether you load an experimental path or pre-programmed
-exp = True
+exp = False
 data_path = 'parallel.npy'
 
 if exp == True:
@@ -137,18 +137,18 @@ if exp == True:
 elif exp == False:
     # simulation config
     t = 10 # seconds
-    n_updates = 200
+    n_updates = 100
     ts = np.linspace(0,t,n_updates)
 
     # playground dimensions
-    dim_x = 400
+    dim_x = 200
     dim_y = 300
 
     # pre-programmed paths (MUST BEGIN AND START IN SAME POINT!!!)
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'square'
+    traj =  'straight'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -198,7 +198,7 @@ elif exp == False:
 
 # agent lead/lagging
 if lead_lag != 0:
-    sps = np.roll(sps,-lead_lag) # TODO: fix wrapping at the end not working
+    sps = np.roll(sps,-lead_lag)
 
 # %% Run simulation 
 
@@ -215,11 +215,11 @@ Is = np.zeros(n_updates)
 Ds = np.zeros(n_updates)
 
 # initial position and velocity for pursuer
-vel_ratio = 0.9 # <1 means slower than target, >1 means faster
+vel_ratio = 0.7 # <1 means slower than target, >1 means faster
 
 # match velocity to that of average of target
 v_p = np.mean(get_velocity(sps))*vel_ratio 
-p_pos[:,0] = [0,0] # X,Y pos
+p_pos[:,0] = [0,dim_y/2+50] # X,Y pos
 
 # PID settings
 Kp = 1

@@ -20,7 +20,7 @@ plt.rcParams['font.serif'] = 'Ubuntu'
 plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
-fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_pursuit/real_flies/'
+fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/real_flies/'
 
 # %% Helper functions to select data
 

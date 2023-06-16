@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import odeint
 %matplotlib qt
 
-fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_pursuit/'
+fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
 
 # %% Tank level controller
 
