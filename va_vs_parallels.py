@@ -1,7 +1,7 @@
 # Implementing missile guidance controller from the classes in here
 # https://www.youtube.com/playlist?list=PLcmbTy9X3gXt02z1wNy4KF5ui0tKxdQm7
 
-# %% Imports
+# %% Imports and plot params
 import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
@@ -54,9 +54,9 @@ def get_velocity(XY_pos):
     # does both subtraction and power operations to X and Y seperately
     pos_diffs = (XY_pos_shift_fwd-XY_pos)**2 
 
-    norms = np.sqrt(pos_diffs[0,:]+pos_diffs[1,:]) # compute norm
+    norms = np.sqrt(pos_diffs[0,:]+pos_diffs[1,:])
     
-    return np.array(norms) # last is always wrong in this implementation..
+    return np.array(norms) # last is always wrong in this implementation
 
 # fixes wrapping at begining not working when introducing lead/lags
 def lead_lag_wrapping(sps, lead_lag):
@@ -130,20 +130,19 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 
 # %% Setting up playground and trajectory of target
 
-# Generic variables
-
 # lead_lag<0 means delayed, >0 means looking ahead
-lead_lag_va = 0
+lead_lag_va = -2
 lead_lag_vs = 0
+
 # coordinate referential
 ref_vec = np.array([0.01,0]) # important that first value is small
 
 # Defines whether you load an experimental path or pre-programmed
 exp = False
-data_path = fd_path + 'real_flies/data/parallel/sps_prof1.npy'
+data_path = fd_path + 'real_flies/data/parallel/sps_prof1.npy' # created from explore_real_data.py
 fly_pos_path = fd_path + 'real_flies/data/parallel/fly_pos_prof1.npy'
 
-session_limit = 1500
+session_limit = 1500 # use only portion of a exp session
 
 if exp == True:
     data = np.load(data_path)
@@ -174,14 +173,14 @@ elif exp == False:
     frame_len = ts[1]
 
     # playground dimensions
-    dim_x = 200
+    dim_x = 400
     dim_y = 300
 
     # pre-programmed paths (must begin and end at same point)
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'square_wave'
+    traj =  'straight'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -192,7 +191,7 @@ elif exp == False:
 
     # straight line left to right
     if traj == 'straight':
-        sps[0,:] = np.linspace(0,dim_x, num=n_updates)  
+        sps[0,:] = np.linspace(20,dim_x, num=n_updates)  
         sps[1,:] = dim_y/2
 
     # line with jitter noise
@@ -250,14 +249,14 @@ animate = False
 # pre-allocating variables
 gammas = np.zeros(n_updates) # controlled in Va
 lambds = np.zeros(n_updates)
-es_va = np.zeros(n_updates) # error shared among controllers
+es_va = np.zeros(n_updates) # same as es_vs if there is no lag difference
 
-lambds_vs = np.zeros(n_updates)
-e_primes = np.zeros(n_updates) # controlled in Vs
-es_vs = np.zeros(n_updates) # error shared among controllers
+lambds_vs = np.zeros(n_updates) # controlled in Vs
+e_primes = np.zeros(n_updates) 
+es_vs = np.zeros(n_updates) # same as es_va if there is no lag difference
 
 mag_vs = np.zeros(n_updates)
-zeros = np.zeros(n_updates) # because the sideways velocity does not accumulate like the angular
+zeros = np.zeros(n_updates) # since sideways velocity does not accumulate like angular
 
 x_change = np.zeros(n_updates)
 y_change = np.zeros(n_updates)
@@ -270,13 +269,13 @@ P_vs = np.zeros(n_updates)
 I_vs = np.zeros(n_updates) 
 
 # Velocity for pursuer
-vel_ratio = 0.7 # <1 means slower than target, >1 means faster
+vel_ratio = 1 # <1 means slower than target, >1 means faster
 
-t_vel = get_velocity(sps)
+t_vel = get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
 
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [0,0] # initial position X,Y
+p_pos[:,0] = [10,200] # initial position X,Y
 
 # Biological limits to the movement
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
@@ -285,12 +284,12 @@ va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 # PID settings for v_a
 Kp = 1
 Ki = 0
-Kd = 0.2
+Kd = 0.5
 win_size = 10
 
 # PID settings for v_s
 Kp_vs = 0
-Ki_vs = 0
+Ki_vs = 1
 Kd_vs = 0
 
 if animate == True:
@@ -341,7 +340,7 @@ for i in range(n_updates):
         e_primes[i+1], P_v, I_v, _ = pid(i,es_vs,zeros,Kp=Kp_vs,Ki=Ki_vs,Kd=Kd_vs,int_win_size=win_size)
         d = np.linalg.norm(range_vec_unnorm)
 
-        # derived from ego
+        # derived from ego equations
         mag_vs[i] = d*(np.sin(es_vs[i]) - np.cos(es_vs[i])*np.tan(es_vs[i]-e_primes[i+1]))
 
         # clipping max vs
@@ -439,13 +438,20 @@ ax_control.legend(loc='best',frameon=False)
 
 # Vs controller
 ax_vs = fig.add_subplot(spec[0:1, 4:])
+ax_error_vs = fig.add_subplot(spec[1:2, 4:])
 ax_control_vs = fig.add_subplot(spec[2:3, 4:])
 
 ax_vs.plot(ts,mag_vs*(1/frame_len),'xkcd:bright blue')
-ax_vs.set_ylabel('Vs (mm/s)')     
+ax_vs.set_ylabel('Vs (mm/s)')
+ax_vs.set_ylim([-10.5, 10.5])     
 ax_vs.set_title('Params: ' + 'Kp='+str(Kp_vs) +' Ki='+str(Ki_vs) +
           ' int = '+str(round(win_size*frame_len*1000)) +' ms')
 ax_vs.set_xticks([], [])
+
+ax_error_vs.plot(ts, es_vs, 'xkcd:green', label='ss angle error = '+str(np.round(es_vs[-10],3)))
+ax_error_vs.set_ylabel('Error')    
+ax_error_vs.legend(loc='best', frameon=False)
+ax_error_vs.set_xticks([], [])
 
 ax_control_vs.plot(ts,P_vs,label='Prop')
 ax_control_vs.plot(ts,I_vs,label='Int')  
