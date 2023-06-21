@@ -131,7 +131,7 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 # %% Setting up playground and trajectory of target
 
 # lead_lag<0 means delayed, >0 means looking ahead
-lead_lag_va = -2
+lead_lag_va = -1
 lead_lag_vs = 0
 
 # coordinate referential
@@ -269,7 +269,7 @@ P_vs = np.zeros(n_updates)
 I_vs = np.zeros(n_updates) 
 
 # Velocity for pursuer
-vel_ratio = 1 # <1 means slower than target, >1 means faster
+vel_ratio = 1.1 # <1 means slower than target, >1 means faster
 
 t_vel = get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
@@ -285,7 +285,7 @@ va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 Kp = 1
 Ki = 0
 Kd = 0.5
-win_size = 10
+win_size = 30
 
 # PID settings for v_s
 Kp_vs = 0
@@ -368,12 +368,14 @@ for i in range(n_updates):
     # Animation stuff
     if animate == True:
         
-        axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6)
+        axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6) # pursuer
+        ori = [p_pos[0,i]+np.cos(gammas[i])*10, p_pos[1,i]+np.sin(gammas[i])*10]
+        axes.plot([p_pos[0,i], ori[0]], [p_pos[1,i], ori[1]], c='white') # pursuers' ori
 
-        axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6)
+        axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6) # target
 
         if exp == True:
-            axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6)
+            axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6) # real fly
 
         axes.set_xlim([-20, dim_x+20])
         axes.set_ylim([-20, dim_y+20])
