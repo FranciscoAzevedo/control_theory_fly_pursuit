@@ -1,5 +1,8 @@
-# Implementing missile guidance controller from the classes in here
-# https://www.youtube.com/playlist?list=PLcmbTy9X3gXt02z1wNy4KF5ui0tKxdQm7
+"""
+    Rotation work for Eugenia Chiappe May-June 2023
+    Author: Francisco Moreira de Azevedo, 2023
+    e-mail: francisco.azevedo@research.fchampalimaud.org
+"""
 
 # %% Imports
 import numpy as np

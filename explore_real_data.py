@@ -1,3 +1,9 @@
+"""
+    Rotation work for Eugenia Chiappe May-June 2023
+    Author: Francisco Moreira de Azevedo, 2023
+    e-mail: francisco.azevedo@research.fchampalimaud.org
+"""
+
 # %% Imports
 import numpy as np
 import pandas as pd
@@ -22,13 +28,9 @@ plt.rcParams.update(params)
 
 fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/real_flies/'
 
-# %% Helper functions to select data
-
-# Data we want
-# Chase, Fly_orientation_deg, Fly_vel_angular, Fly center coord
 # %% Load data - choose the one with highest perc of chase
 dataset_type = 'parallel'
-# TODO choose profile number
+# TODO choose any arbitrary profile number
 
 max = 0
 for name in os.listdir(fd_path + 'data/' + dataset_type + '/profile1/'):

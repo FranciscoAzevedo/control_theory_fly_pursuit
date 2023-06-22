@@ -1,3 +1,9 @@
+"""
+    Rotation work for Eugenia Chiappe May-June 2023
+    Author: Francisco Moreira de Azevedo, 2023
+    e-mail: francisco.azevedo@research.fchampalimaud.org
+"""
+
 #  Code adapted from here
 # https://apmonitor.com/pdc/index.php/Main/CourseSchedule
 

@@ -1,5 +1,8 @@
-# Implementing missile guidance controller from the classes in here
-# https://www.youtube.com/playlist?list=PLcmbTy9X3gXt02z1wNy4KF5ui0tKxdQm7
+"""
+    Rotation work for Eugenia Chiappe May-June 2023
+    Author: Francisco Moreira de Azevedo, 2023
+    e-mail: francisco.azevedo@research.fchampalimaud.org
+"""
 
 # %% Imports and plot params
 import numpy as np
@@ -180,7 +183,7 @@ elif exp == False:
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'straight'
+    traj =  'circle'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -269,27 +272,27 @@ P_vs = np.zeros(n_updates)
 I_vs = np.zeros(n_updates) 
 
 # Velocity for pursuer
-vel_ratio = 1.1 # <1 means slower than target, >1 means faster
+vel_ratio = 0.9 # <1 means slower than target, >1 means faster
 
 t_vel = get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
 
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [10,200] # initial position X,Y
+p_pos[:,0] = [10,dim_y] # initial position X,Y
 
 # Biological limits to the movement
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
 va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 
 # PID settings for v_a
-Kp = 1
+Kp = 0.5
 Ki = 0
-Kd = 0.5
-win_size = 30
+Kd = 0
+win_size = 20
 
 # PID settings for v_s
 Kp_vs = 0
-Ki_vs = 1
+Ki_vs = 0.5
 Kd_vs = 0
 
 if animate == True:
