@@ -2,15 +2,17 @@
     Rotation work for Eugenia Chiappe May-June 2023
     Author: Francisco Moreira de Azevedo, 2023
     e-mail: francisco.azevedo@research.fchampalimaud.org
+
+    Implementation of parallel Va and Vs controllers
 """
 
 # %% Imports and plot params
 import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
-import math
 import imageio
 import os
+import util
 %matplotlib qt
 
 params = {'legend.fontsize': 'large',
@@ -27,72 +29,7 @@ plt.rcParams['font.serif'] = 'Ubuntu'
 plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
-fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
-
-# %% Helper functions
-
-# Define function to compute lambda
-def get_range_vec(pursuer_pos,target_pos):
-    range_vec_unnorm = target_pos-pursuer_pos
-    range_vec = range_vec_unnorm / np.linalg.norm(range_vec_unnorm) # unit vector
-    return np.array(range_vec)
-
-def get_angle_atan2(comp_vec, ref_vec):
-    vec = comp_vec-ref_vec
-    dX = vec[0]
-    dY = vec[1]
-    rad = math.atan2(dY,dX)
-    return rad
-
-def wrap_angles(rads):
-    wrapped_rads = (rads + np.pi) % (2 * np.pi) - np.pi
-    return wrapped_rads
-
-# computing instantaneous velocity
-def get_velocity(XY_pos):
-    
-    XY_pos_shift_fwd = np.roll(XY_pos,-1) # shift one array forward
-
-    # compute difference and square
-    # does both subtraction and power operations to X and Y seperately
-    pos_diffs = (XY_pos_shift_fwd-XY_pos)**2 
-
-    norms = np.sqrt(pos_diffs[0,:]+pos_diffs[1,:])
-    
-    return np.array(norms) # last is always wrong in this implementation
-
-# fixes wrapping at begining not working when introducing lead/lags
-def lead_lag_wrapping(sps, lead_lag):
-    
-    if lead_lag < 0: 
-        sps[:,0:(-lead_lag)] = np.tile(sps[:,-lead_lag+1], [-lead_lag,1]).T
-    elif lead_lag > 0:
-        sps[:,(-lead_lag):] = np.tile(sps[:,-lead_lag-1], [lead_lag,1]).T
-
-    return sps
-
-# https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
-def nan_helper(y):
-    return np.isnan(y), lambda z: z.nonzero()[0]
-
-def nan_cleaner_and_shift(xys, dim_x, dim_y):
-    """
-        Cleans nans out of X,Y position vector
-        Shifts coord system 
-    """
-
-    # Filling up nans with previous value registered
-    nans, x = nan_helper(xys[0,:])
-    xys[0,:][nans]= np.interp(x(nans), x(~nans), xys[0,:][~nans])
-
-    nans, x = nan_helper(xys[1,:])
-    xys[1,:][nans]= np.interp(x(nans), x(~nans), xys[1,:][~nans])
-
-    # changing referential to lower left instead of center
-    xys[0,:] = xys[0,:] + dim_x/2
-    xys[1,:] = xys[1,:] + dim_y/2
-
-    return xys
+fd_path = '/home/paco/Desktop/ccu/code_data/control_theory_fly_pursuit'
 
 # %% Define PID controller
 def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
@@ -135,7 +72,7 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 
 # lead_lag<0 means delayed, >0 means looking ahead
 lead_lag_va = 0
-lead_lag_vs = -5
+lead_lag_vs = 0
 
 # coordinate referential
 ref_vec = np.array([0.01,0]) # important that first value is small
@@ -165,8 +102,8 @@ if exp == True:
     dim_x = max(abs(sps[0,:]))*2
     dim_y = max(abs(sps[1,:]))*2
 
-    sps = nan_cleaner_and_shift(sps, dim_x, dim_y)
-    fly_pos = nan_cleaner_and_shift(fly_pos, dim_x, dim_y)
+    sps = util.nan_cleaner_and_shift(sps, dim_x, dim_y)
+    fly_pos = util.nan_cleaner_and_shift(fly_pos, dim_x, dim_y)
 
 elif exp == False:
     # simulation config
@@ -234,13 +171,13 @@ elif exp == False:
 # agent lead/lagging
 if lead_lag_va != 0:
     sps_va = np.roll(sps,-lead_lag_va)
-    sps_va = lead_lag_wrapping(sps_va, lead_lag_va)
+    sps_va = util.lead_lag_wrapping(sps_va, lead_lag_va)
 else:
     sps_va = sps
 
 if lead_lag_vs != 0:
     sps_vs = np.roll(sps,-lead_lag_vs)
-    sps_vs = lead_lag_wrapping(sps_vs, lead_lag_vs)
+    sps_vs = util.lead_lag_wrapping(sps_vs, lead_lag_vs)
 else:
     sps_vs = sps
 
@@ -264,9 +201,9 @@ zeros = np.zeros(n_updates) # since sideways velocity does not accumulate like a
 x_change = np.zeros(n_updates)
 y_change = np.zeros(n_updates)
 p_pos = np.zeros((2,n_updates))
-Ps = np.zeros(n_updates) 
-Is = np.zeros(n_updates) 
-Ds = np.zeros(n_updates)
+P_va = np.zeros(n_updates) 
+I_va = np.zeros(n_updates) 
+D_va = np.zeros(n_updates)
 
 P_vs = np.zeros(n_updates) 
 I_vs = np.zeros(n_updates) 
@@ -274,7 +211,7 @@ I_vs = np.zeros(n_updates)
 # Velocity for pursuer
 vel_ratio = 0.9 # <1 means slower than target, >1 means faster
 
-t_vel = get_velocity(sps) # target velocities
+t_vel = util.get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
 
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
@@ -284,16 +221,32 @@ p_pos[:,0] = [10,dim_y/2+40] # initial position X,Y
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
 va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 
-# PID settings for v_a
-Kp = 0.5
-Ki = 0
-Kd = 0
+# general PID
 win_size = 20
 
+# PID settings for v_a
+va_ON = True
+if va_ON == False:
+    Kp_va = 0
+    Ki_va = 0
+    Kd_va = 0
+
+elif va_ON == True:
+    Kp_va = 1
+    Ki_va = 0
+    Kd_va = 0
+
 # PID settings for v_s
-Kp_vs = 0
-Ki_vs = 0.5
-Kd_vs = 0
+vs_ON = True
+if va_ON == False:
+    Kp_vs = 0
+    Ki_vs = 0
+    Kd_vs = 0
+
+elif va_ON == True:
+    Kp_vs = 1
+    Ki_vs = 0
+    Kd_vs = 0
 
 if animate == True:
     fig,axes = plt.subplots()
@@ -306,7 +259,7 @@ for i in range(n_updates):
 
     # Current part - Va
     range_vec_unnorm = sps_va[:,i] - p_pos[:,i]
-    lambd = get_angle_atan2(range_vec_unnorm, ref_vec)
+    lambd = util.get_angle_atan2(range_vec_unnorm, ref_vec)
 
     # unwrapping angle (to avoid error whipping)
     if i>1:
@@ -316,7 +269,7 @@ for i in range(n_updates):
 
     # Current part - Vs
     range_vec_unnorm = sps_vs[:,i] - p_pos[:,i]
-    lambd_vs = get_angle_atan2(range_vec_unnorm, ref_vec)
+    lambd_vs = util.get_angle_atan2(range_vec_unnorm, ref_vec)
 
     # unwrapping angle (to avoid error whipping)
     if i>1:
@@ -329,7 +282,7 @@ for i in range(n_updates):
 
         # Update Va controller
         es_va[i] = lambd-gammas[i]
-        gammas[i+1], P,I,D = pid(i,es_va,gammas,Kp=Kp,Ki=Ki,Kd=Kd,int_win_size=win_size)
+        gammas[i+1], P,I,D = pid(i,es_va,gammas,Kp=Kp_va,Ki=Ki_va,Kd=Kd_va,int_win_size=win_size)
 
         # clipping max va
         delta_gamma = gammas[i+1] - gammas[i]
@@ -355,6 +308,19 @@ for i in range(n_updates):
         # Update Process (kinematics) inputting va and vs
         x_change[i] = np.cos(gammas[i+1])*v_p[i] + mag_vs[i]*np.cos(gammas[i]+np.pi/2)
         y_change[i] = np.sin(gammas[i+1])*v_p[i] + mag_vs[i]*np.sin(gammas[i]+np.pi/2)
+        
+        # need to normalize
+        if va_ON == True and vs_ON == True:
+            curr_x = p_pos[0,i] + x_change[i]
+            curr_y = p_pos[1,i] + y_change[i]
+
+            rho, phi = util.cart2pol(curr_x, curr_y)
+            rho = v_p # forcing it to not exceed stipulated magnitude of velocity
+
+            new_x, new_y = util.pol2cart(rho, phi)
+
+            x_change[i] = new_x
+            y_change[i] = new_y
 
         p_pos[0,i+1] = p_pos[0,i] + x_change[i]
         p_pos[1,i+1] = p_pos[1,i] + y_change[i]
@@ -362,9 +328,9 @@ for i in range(n_updates):
     # store variables
     lambds[i] = lambd
     lambds_vs[i] = lambd_vs
-    Ps[i] = P
-    Is[i] = I
-    Ds[i] = D
+    P_va[i] = P
+    I_va[i] = I
+    D_va[i] = D
     P_vs[i] = P_v
     I_vs[i] = I_v
 
@@ -424,8 +390,8 @@ v_a = np.rad2deg(v_a)/frame_len # convert to degree/sec to plot
 
 ax_angle.plot(ts[:-1],v_a[:-1],'xkcd:bright blue')
 ax_angle.set_ylabel('Va (°/s)')    
-ax_angle.set_title('Params: ' + 'Kp='+str(Kp) +' Ki='+str(Ki) +
-          ' int = '+str(round(win_size*frame_len*1000)) +'ms Kd='+str(Kd))
+ax_angle.set_title('Params: ' + 'Kp='+str(Kp_va) +' Ki='+str(Ki_va) +
+          ' int = '+str(round(win_size*frame_len*1000)) +'ms Kd='+str(Kd_va))
 ax_angle.set_xticks([], [])
 
 ax_error.axhline(0,c = 'r')
@@ -434,9 +400,9 @@ ax_error.set_ylabel('Error')
 ax_error.legend(loc='best', frameon=False)
 ax_error.set_xticks([], [])
 
-ax_control.plot(ts,Ps,label='Prop')
-ax_control.plot(ts,Is,label='Int')
-ax_control.plot(ts,Ds,label='Der')
+ax_control.plot(ts,P_va,label='Prop')
+ax_control.plot(ts,I_va,label='Int')
+ax_control.plot(ts,D_va,label='Der')
 ax_control.set_ylabel("Controllers' effort")    
 ax_control.set_xlabel('Time (sec)')
 ax_control.legend(loc='best',frameon=False)
@@ -463,8 +429,8 @@ ax_control_vs.plot(ts,I_vs,label='Int')
 ax_control_vs.set_xlabel('Time (sec)')
 ax_control_vs.legend(loc='best',frameon=False)
 
-params =    'Kp='+str(Kp) +'_Ki='+str(Ki) +'_int_win_size='+str(win_size) \
-            +'_Kd='+str(Kd) + '_velratio='+str(vel_ratio) + '.png'
+params =    'Kp='+str(Kp_va) +'_Ki='+str(Ki_va) +'_int_win_size='+str(win_size) \
+            +'_Kd='+str(Kd_va) + '_velratio='+str(vel_ratio) + '.png'
 
 if exp == True:
     path = fd_path + 'real_flies/va+vs_cont/parallel/'

@@ -9,7 +9,6 @@ import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 import math
-import imageio
 import os
 %matplotlib qt
 
@@ -28,42 +27,6 @@ plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
 fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
-
-# %% Helper functions
-
-# https://stackoverflow.com/questions/6518811/interpolate-nan-values-in-a-numpy-array
-def nan_helper(y):
-    return np.isnan(y), lambda z: z.nonzero()[0]
-
-# Define function to compute lambda
-def get_range_vec(pursuer_pos,target_pos):
-    range_vec_unnorm = target_pos-pursuer_pos
-    range_vec = range_vec_unnorm / np.linalg.norm(range_vec_unnorm) # unit vector
-    return np.array(range_vec)
-
-def get_angle_atan2(comp_vec, ref_vec):
-    vec = comp_vec-ref_vec
-    dX = vec[0]
-    dY = vec[1]
-    rad = math.atan2(dY,dX)
-    return rad
-
-def wrap_angles(rads):
-    wrapped_rads = (rads + np.pi) % (2 * np.pi) - np.pi
-    return wrapped_rads
-
-# computing velocity
-def get_velocity(XY_pos):
-
-    XY_pos_shift_fwd = np.roll(XY_pos,-1) # shift one array forward
-
-    # compute difference and square
-    # does both subtraction and power operations to X and Y seperately
-    pos_diffs = (XY_pos_shift_fwd-XY_pos)**2 
-
-    norms = np.sqrt(pos_diffs[0,:]+pos_diffs[1,:]) # compute norm
-    
-    return np.array(norms) # last is always wrong in this implementation..
 
 # %% Define PID controller
 def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
@@ -127,10 +90,10 @@ if exp == True:
     dim_y = max(abs(sps[1,:]))*2
 
     # Filling up nans with previous value registered
-    nans, x = nan_helper(sps[0,:])
+    nans, x = util.nan_helper(sps[0,:])
     sps[0,:][nans]= np.interp(x(nans), x(~nans), sps[0,:][~nans])
 
-    nans, x = nan_helper(sps[1,:])
+    nans, x = util.nan_helper(sps[1,:])
     sps[1,:][nans]= np.interp(x(nans), x(~nans), sps[1,:][~nans])
 
     # chaning referential to lower left instead of center
@@ -221,7 +184,7 @@ Ds = np.zeros(n_updates)
 vel_ratio = 0.7 # <1 means slower than target, >1 means faster
 
 # match velocity to that of average of target
-v_p = np.mean(get_velocity(sps))*vel_ratio 
+v_p = np.mean(util.get_velocity(sps))*vel_ratio 
 p_pos[:,0] = [0,dim_y/2+50] # X,Y pos
 
 # PID settings
@@ -235,7 +198,7 @@ for i in range(n_updates):
 
     # Current part
     range_vec = sps[:,i] - p_pos[:,i]
-    lambd = get_angle_atan2(range_vec, ref_vec)
+    lambd = util.get_angle_atan2(range_vec, ref_vec)
 
     # unwrapping angle (to avoid error whipping)
     if i>1:
@@ -285,8 +248,8 @@ ax_dis.set_ylabel('Distance (a.u.)')
 ax_dis.set_ylim([0,max(dis)])
 ax_dis.legend(loc='best',frameon=False)
 
-ax_angle.plot(ts,np.rad2deg(wrap_angles(lambds)),'g-',label='lambda (SP)')
-ax_angle.plot(ts,np.rad2deg(wrap_angles(gammas)),'b-',label='gamma (PV)')
+ax_angle.plot(ts,np.rad2deg(util.wrap_angles(lambds)),'g-',label='lambda (SP)')
+ax_angle.plot(ts,np.rad2deg(util.wrap_angles(gammas)),'b-',label='gamma (PV)')
 ax_angle.set_ylabel('Angles (º)')    
 ax_angle.legend(loc='best', frameon=False)
 ax_angle.set_title('Params: ' + 'Kp='+str(Kp) +' Ki='+str(Ki) +
