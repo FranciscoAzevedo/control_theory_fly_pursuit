@@ -134,8 +134,8 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 # %% Setting up playground and trajectory of target
 
 # lead_lag<0 means delayed, >0 means looking ahead
-lead_lag_va = -1
-lead_lag_vs = 0
+lead_lag_va = 0
+lead_lag_vs = -5
 
 # coordinate referential
 ref_vec = np.array([0.01,0]) # important that first value is small
@@ -183,7 +183,7 @@ elif exp == False:
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'circle'
+    traj =  'straight'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -278,7 +278,7 @@ t_vel = get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
 
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [10,dim_y] # initial position X,Y
+p_pos[:,0] = [10,dim_y/2+40] # initial position X,Y
 
 # Biological limits to the movement
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
