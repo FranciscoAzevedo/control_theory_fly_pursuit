@@ -29,7 +29,7 @@ plt.rcParams['font.serif'] = 'Ubuntu'
 plt.rcParams['font.monospace'] = 'Ubuntu Mono'
 plt.rcParams.update(params)
 
-fd_path = '/home/paco/Desktop/ccu/code_data/control_theory_fly_pursuit'
+fd_path = '/home/paco-laptop/Desktop/paco/code/control_theory_fly_pursuit/'
 
 # %% Define PID controller
 def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
@@ -78,11 +78,11 @@ lead_lag_vs = 0
 ref_vec = np.array([0.01,0]) # important that first value is small
 
 # Defines whether you load an experimental path or pre-programmed
-exp = False
+exp = True
 data_path = fd_path + 'real_flies/data/parallel/sps_prof1.npy' # created from explore_real_data.py
 fly_pos_path = fd_path + 'real_flies/data/parallel/fly_pos_prof1.npy'
 
-session_limit = 1500 # use only portion of a exp session
+session_limit = 500 # use only portion of a exp session
 
 if exp == True:
     data = np.load(data_path)
@@ -215,7 +215,7 @@ t_vel = util.get_velocity(sps) # target velocities
 t_vel[-1] = t_vel[-2]
 
 v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [10,dim_y/2+40] # initial position X,Y
+p_pos[:,0] = [dim_x,0] # initial position X,Y
 
 # Biological limits to the movement
 vs_max = 10 * frame_len # 10 mm/s to mm/frame
@@ -230,22 +230,20 @@ if va_ON == False:
     Kp_va = 0
     Ki_va = 0
     Kd_va = 0
-
 elif va_ON == True:
     Kp_va = 1
     Ki_va = 0
-    Kd_va = 0
+    Kd_va = 0.5
 
 # PID settings for v_s
 vs_ON = True
-if va_ON == False:
+if vs_ON == False:
     Kp_vs = 0
     Ki_vs = 0
     Kd_vs = 0
-
-elif va_ON == True:
+elif vs_ON == True:
     Kp_vs = 1
-    Ki_vs = 0
+    Ki_vs = 0.5
     Kd_vs = 0
 
 if animate == True:
@@ -309,18 +307,12 @@ for i in range(n_updates):
         x_change[i] = np.cos(gammas[i+1])*v_p[i] + mag_vs[i]*np.cos(gammas[i]+np.pi/2)
         y_change[i] = np.sin(gammas[i+1])*v_p[i] + mag_vs[i]*np.sin(gammas[i]+np.pi/2)
         
-        # need to normalize
+        # need to normalize velocities
         if va_ON == True and vs_ON == True:
-            curr_x = p_pos[0,i] + x_change[i]
-            curr_y = p_pos[1,i] + y_change[i]
+            rho, phi = util.cart2pol(x_change[i], y_change[i]) 
+            rho = v_p[i] # forcing it to not exceed stipulated magnitude of velocity
 
-            rho, phi = util.cart2pol(curr_x, curr_y)
-            rho = v_p # forcing it to not exceed stipulated magnitude of velocity
-
-            new_x, new_y = util.pol2cart(rho, phi)
-
-            x_change[i] = new_x
-            y_change[i] = new_y
+            x_change[i], y_change[i] = util.pol2cart(rho, phi)
 
         p_pos[0,i+1] = p_pos[0,i] + x_change[i]
         p_pos[1,i+1] = p_pos[1,i] + y_change[i]
@@ -362,6 +354,17 @@ for i in range(n_updates):
 if animate == True:
     imageio.mimsave(fd_path + 'playground_figs/' + 'pursuit.gif', images)
 
+# Trajectories plot
+fig, axes = plt.subplots(figsize = (4,4))
+axes.scatter(sps[0,:], sps[1,:], c = 'r', s = 2, label = 'target')
+axes.scatter(p_pos[0,:], p_pos[1,:], c = 'g', s = 2, label = 'pursuer')
+axes.set_xlim([0, dim_x+5])
+axes.set_ylim([0, dim_y+5])
+axes.axis('off')
+axes.legend(frameon = False)
+
+# %% Full plot
+
 # Gridpsec
 fig = plt.figure(figsize=(12, 10), layout="constrained")
 spec = fig.add_gridspec(3, 6)
@@ -371,7 +374,7 @@ ax_error = fig.add_subplot(spec[1:2, 2:4])
 ax_control = fig.add_subplot(spec[2:3, 2:4])
 ax_dis = fig.add_subplot(spec[2:, 0:2])
 
-# Va controller
+# Trajectory and distance
 ax_traj.scatter(sps[0,:], sps[1,:], c = 'r', s = 2)
 ax_traj.scatter(p_pos[0,:], p_pos[1,:], c = 'g', s = 2)
 ax_traj.set_xlim([-5, dim_x+5])
@@ -385,6 +388,7 @@ ax_dis.set_ylabel('Distance (a.u.)')
 ax_dis.set_ylim([0,max(dis)])
 ax_dis.legend(loc='best',frameon=False)
 
+# Va controller
 v_a = np.roll(gammas,-1)-gammas
 v_a = np.rad2deg(v_a)/frame_len # convert to degree/sec to plot
 
