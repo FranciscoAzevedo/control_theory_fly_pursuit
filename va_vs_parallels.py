@@ -120,7 +120,7 @@ elif exp == False:
 
     # Define path of the target (Set Point _is_ the target position)
     sps = np.zeros((2, n_updates))
-    traj =  'straight'
+    traj =  'circle'
 
     # square wave l2r, to test int windup reset
     if traj == 'square_wave':
@@ -225,7 +225,7 @@ va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 win_size = 20
 
 # PID settings for v_a
-va_ON = True
+va_ON = False
 if va_ON == False:
     Kp_va = 0
     Ki_va = 0
@@ -305,17 +305,15 @@ for i in range(n_updates):
         elif mag_vs[i] < -vs_max:
             mag_vs[i] = -vs_max
 
-        # Update Process (kinematics) inputting va and vs
+        # Update Process (kinematics): Va and Vs on left and right side of eq, respectively
+        # Note how Vs uses last gamma update "i" instead of "i+1", since controllers are independent 
         x_change[i] = np.cos(gammas[i+1])*v_p[i] + mag_vs[i]*np.cos(gammas[i]+np.pi/2)
         y_change[i] = np.sin(gammas[i+1])*v_p[i] + mag_vs[i]*np.sin(gammas[i]+np.pi/2)
         
-        # need to normalize
+        # need to normalize when both velocities are in place
         if va_ON == True and vs_ON == True:
-            curr_x = p_pos[0,i] + x_change[i]
-            curr_y = p_pos[1,i] + y_change[i]
-
-            rho, phi = util.cart2pol(curr_x, curr_y)
-            rho = v_p # forcing it to not exceed stipulated magnitude of velocity
+            rho, phi = util.cart2pol(x_change[i], y_change[i])
+            rho = v_p[i] # forcing Rho not exceed target velocity's magnitude 
 
             new_x, new_y = util.pol2cart(rho, phi)
 
