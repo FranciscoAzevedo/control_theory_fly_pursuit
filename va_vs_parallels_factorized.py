@@ -10,9 +10,12 @@
 import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import imageio
 import os
 import util
+from argparse import Namespace
+
 %matplotlib qt
 
 params = {'legend.fontsize': 'large',
@@ -31,7 +34,7 @@ plt.rcParams.update(params)
 
 fd_path = '/home/paco/Desktop/ccu/code_data/control_theory_fly_pursuit/'
 
-# %% Define PID controller
+# %% Define general PID controller
 def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 
     """
@@ -130,17 +133,9 @@ elif exp == False:
         sps[1,:] = signal.square(2 * np.pi * freq * t)*20 + dim_y/2
 
     # straight line left to right
-    if traj == 'straight':
+    elif traj == 'straight':
         sps[0,:] = np.linspace(20,dim_x, num=n_updates)  
         sps[1,:] = dim_y/2
-
-    # line with jitter noise
-    if traj == 'jitter_line':
-        sps[0,:] = np.linspace(0,dim_x, num=n_updates)  
-
-        # jitter
-        noise_sigma = 10*frame_len # 10 mm/s to mm/frame_len
-        sps[1,:] = np.random.normal(dim_y/2,noise_sigma,n_updates)
         
     # circle
     elif traj == 'circle':
@@ -168,6 +163,11 @@ elif exp == False:
         
         sps = np.vstack((path[0][0::step], path[1][0::step]))
 
+    else:
+        raise ValueError('Wrong input given for path variable')
+else:
+    raise ValueError('Wrong input given for "exp" variable')
+
 # agent lead/lagging
 if lead_lag_va != 0:
     sps_va = np.roll(sps,-lead_lag_va)
@@ -182,190 +182,211 @@ else:
     sps_vs = sps
 
 # %% Run simulation 
+def sim(sps, frame_len, va_ON, vs_ON, **input_dict):
+    """
+        sps : target's position
+        ts : timepoints of sps
+        va_ON/vs_ON : whether angular and sideways controllers are active
+        input_dict : flexible args that overwrite default args
+    """
 
-# Inputs
-# sps, anim, init_x, init_y, vel_ratio, Kp_va, Ki_va, Kd_va, Kp_vs, Ki_vs, win_size, va_ON, vs_ON
+    default_dict = {'init_x': 0, 
+                    'init_y': 0, 
+                    'vel_ratio': 0.9, 
+                    'Kp_va': 1, 
+                    'Ki_va': 0, 
+                    'Kd_va': 0, 
+                    'Kp_vs': 1, 
+                    'Ki_vs': 0,
+                    'Kd_vs': 0, 
+                    'win_size': 20, # 20 wtv frame len
+                    'anim': False}
+    
+    # overwriting default vars with flexible inputs
+    args = {**default_dict, **input_dict}
+    params = Namespace(**args)
 
-# Outputs
-# p_pos, lambds, lambds_vs, P_va, I_va, D_va, P_vs, I_vs
+    # pre-allocating variables
+    gammas = np.zeros(n_updates) # controlled in Va
+    lambds_va = np.zeros(n_updates)
+    es_va = np.zeros(n_updates) # same as es_vs if there is no lag difference
 
-# animation
-animate = False
+    lambds_vs = np.zeros(n_updates) # controlled in Vs
+    e_primes = np.zeros(n_updates) 
+    es_vs = np.zeros(n_updates) # same as es_va if there is no lag difference
+    mag_vs = np.zeros(n_updates)
+    zeros = np.zeros(n_updates) # since sideways velocity does not accumulate like angular
 
-# pre-allocating variables
-gammas = np.zeros(n_updates) # controlled in Va
-lambds = np.zeros(n_updates)
-es_va = np.zeros(n_updates) # same as es_vs if there is no lag difference
+    p_pos = np.zeros((2,n_updates)) 
 
-lambds_vs = np.zeros(n_updates) # controlled in Vs
-e_primes = np.zeros(n_updates) 
-es_vs = np.zeros(n_updates) # same as es_va if there is no lag difference
+    P_va = np.zeros(n_updates) # controller's effort for Va
+    I_va = np.zeros(n_updates) 
+    D_va = np.zeros(n_updates)
 
-mag_vs = np.zeros(n_updates)
-zeros = np.zeros(n_updates) # since sideways velocity does not accumulate like angular
+    P_vs = np.zeros(n_updates) # controller's effort for Vs
+    I_vs = np.zeros(n_updates) 
+    D_vs = np.zeros(n_updates)
 
-x_change = np.zeros(n_updates)
-y_change = np.zeros(n_updates)
-p_pos = np.zeros((2,n_updates))
-P_va = np.zeros(n_updates) 
-I_va = np.zeros(n_updates) 
-D_va = np.zeros(n_updates)
+    # PID settings for v_a
+    if va_ON == False:
+        Kp_va = 0
+        Ki_va = 0
+        Kd_va = 0
+    elif va_ON == True:
+        Kp_va = params.Kp_va
+        Ki_va = params.Ki_va
+        Kd_va = params.Kd_va
 
-P_vs = np.zeros(n_updates) 
-I_vs = np.zeros(n_updates) 
+    # PID settings for v_s
+    if vs_ON == False:
+        Kp_vs = 0
+        Ki_vs = 0
+        Kd_vs = 0
+    elif vs_ON == True:
+        Kp_vs = params.Kp_vs
+        Ki_vs = params.Ki_vs
+        Kd_vs = params.Kd_vs
 
-# Velocity for pursuer
-vel_ratio = 0.95 # <1 means slower than target, >1 means faster
+    # Velocity for pursuer
+    t_vel = util.get_velocity(sps) # target velocities
+    t_vel[-1] = t_vel[-2]
 
-t_vel = util.get_velocity(sps) # target velocities
-t_vel[-1] = t_vel[-2]
+    v_p = t_vel*params.vel_ratio # match velocity to that of real time of target
+    p_pos[:,0] = [params.init_x, params.init_y] # initial position X,Y
 
-v_p = t_vel*vel_ratio # match velocity to that of real time of target
-p_pos[:,0] = [dim_x,0] # initial position X,Y
+    # Biological limits to the movement
+    vs_max = 10 * frame_len # 10 mm/s to mm/frame
+    va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
 
-# Biological limits to the movement
-vs_max = 10 * frame_len # 10 mm/s to mm/frame
-va_max = np.deg2rad(1000)*frame_len # 1000 degrees/s to rads/frame
+    if params.anim == True:
+        fig,axes = plt.subplots()
+        plt.ion()
 
-# general PID
-win_size = 20
+        images = [] # for gif
 
-# PID settings for v_a
+    # simulate
+    for i in range(n_updates):
+
+        # Current part - Va
+        range_vec_unnorm = sps_va[:,i] - p_pos[:,i]
+        lambd = util.get_angle_atan2(range_vec_unnorm, ref_vec)
+
+        # unwrapping angle (to avoid error whipping)
+        if i>1:
+            rads = [lambds_va[i-1], lambd]
+            rads_unwraped = np.unwrap(rads, period=np.pi)
+            lambd = rads_unwraped[1]
+
+        # Current part - Vs
+        range_vec_unnorm = sps_vs[:,i] - p_pos[:,i]
+        lambd_vs = util.get_angle_atan2(range_vec_unnorm, ref_vec)
+
+        # unwrapping angle (to avoid error whipping)
+        if i>1:
+            rads = [lambds_vs[i-1], lambd_vs]
+            rads_unwraped = np.unwrap(rads, period=np.pi)
+            lambd_vs = rads_unwraped[1]
+
+        # avoid crashing due to i+1 in last iteration
+        if i < (n_updates-1): 
+
+            # Update Va controller
+            es_va[i] = lambd-gammas[i]
+            gammas[i+1], P,I,D = pid(i,es_va,gammas,Kp=Kp_va,Ki=Ki_va,Kd=Kd_va,int_win_size=params.win_size)
+
+            # clipping max va (relative to previous gamma[i])
+            delta_gamma = gammas[i+1] - gammas[i]
+            if delta_gamma > va_max:
+                gammas[i+1] = gammas[i] + va_max
+            elif delta_gamma < -va_max:
+                gammas[i+1] = gammas[i] - va_max
+
+            # Update Vs controller
+            es_vs[i] = lambd_vs-gammas[i]
+            e_primes[i+1], P_v, I_v, D_v = pid(i,es_vs,zeros,Kp=Kp_vs,Ki=Ki_vs,Kd=Kd_vs,int_win_size=params.win_size)
+            d = np.linalg.norm(range_vec_unnorm)
+
+            # derived from ego equations
+            mag_vs[i] = d*(np.sin(es_vs[i]) - np.cos(es_vs[i])*np.tan(es_vs[i]-e_primes[i+1]))
+
+            # clipping max vs (is not relative to anything)
+            if mag_vs[i] > vs_max:
+                mag_vs[i] = vs_max
+            elif mag_vs[i] < -vs_max:
+                mag_vs[i] = -vs_max
+
+            # Update Process (kinematics): Va and Vs on left and right side of eq, respectively
+            # Note how Vs uses last gamma update "i" instead of "i+1", since controllers are independent 
+            x_change = np.cos(gammas[i+1])*v_p[i] + mag_vs[i]*np.cos(gammas[i]+np.pi/2)
+            y_change = np.sin(gammas[i+1])*v_p[i] + mag_vs[i]*np.sin(gammas[i]+np.pi/2)
+            
+            # need to normalize velocities (|va+vs| = |vp|*velocity ratio always needs to be satisfied)
+            if va_ON == True and vs_ON == True:
+                rho, phi = util.cart2pol(x_change, y_change) 
+                rho = v_p[i]
+
+                x_change, y_change = util.pol2cart(rho, phi)
+
+            p_pos[0,i+1] = p_pos[0,i] + x_change
+            p_pos[1,i+1] = p_pos[1,i] + y_change
+
+        # store variables
+        lambds_va[i] = lambd
+        lambds_vs[i] = lambd_vs
+        P_va[i] = P
+        I_va[i] = I
+        D_va[i] = D
+        P_vs[i] = P_v
+        I_vs[i] = I_v
+        D_vs[i] = D_v
+
+        # Animation stuff
+        if params.anim == True:
+            
+            axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6) # pursuer
+            ori = [p_pos[0,i]+np.cos(gammas[i])*10, p_pos[1,i]+np.sin(gammas[i])*10]
+            axes.plot([p_pos[0,i], ori[0]], [p_pos[1,i], ori[1]], c='white') # pursuers' ori
+
+            axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6) # target
+
+            if exp == True:
+                axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6) # real fly
+
+            axes.set_xlim([-20, dim_x+20])
+            axes.set_ylim([-20, dim_y+20])
+            axes.patch.set_facecolor('k')
+            fig.patch.set_facecolor('k')
+            axes.axis('off')
+            plt.pause(0.001)
+            fig.canvas.draw()
+
+            filename= fd_path+'gif_images/'+str(1000+i)+'.png'
+            plt.savefig(filename)
+            images.append(imageio.imread(filename))
+            axes.clear()
+
+    if params.anim == True:
+        imageio.mimsave(fd_path + 'playground_figs/' + 'pursuit.gif', images)
+
+    return p_pos, lambds_va, lambds_vs, P_va, I_va, D_va, P_vs, I_vs, es_vs, es_va, gammas, mag_vs
+
+# %% Simulate
 va_ON = True
-if va_ON == False:
-    Kp_va = 0
-    Ki_va = 0
-    Kd_va = 0
-elif va_ON == True:
-    Kp_va = 1
-    Ki_va = 0
-    Kd_va = 0.5
+vs_ON = False
 
-# PID settings for v_s
-vs_ON = True
-if vs_ON == False:
-    Kp_vs = 0
-    Ki_vs = 0
-    Kd_vs = 0
-elif vs_ON == True:
-    Kp_vs = 1
-    Ki_vs = 0.5
-    Kd_vs = 0
+input_dict = {  'init_x': dim_x, 
+                'init_y': 0}
 
-if animate == True:
-    fig,axes = plt.subplots()
-    plt.ion()
-
-    images = [] # for gif
-
-# simulate
-for i in range(n_updates):
-
-    # Current part - Va
-    range_vec_unnorm = sps_va[:,i] - p_pos[:,i]
-    lambd = util.get_angle_atan2(range_vec_unnorm, ref_vec)
-
-    # unwrapping angle (to avoid error whipping)
-    if i>1:
-        rads = [lambds[i-1], lambd]
-        rads_unwraped = np.unwrap(rads, period=np.pi)
-        lambd = rads_unwraped[1]
-
-    # Current part - Vs
-    range_vec_unnorm = sps_vs[:,i] - p_pos[:,i]
-    lambd_vs = util.get_angle_atan2(range_vec_unnorm, ref_vec)
-
-    # unwrapping angle (to avoid error whipping)
-    if i>1:
-        rads = [lambds_vs[i-1], lambd_vs]
-        rads_unwraped = np.unwrap(rads, period=np.pi)
-        lambd_vs = rads_unwraped[1]
-
-    # avoid crashing due to i+1 in last iteration
-    if i < (n_updates-1): 
-
-        # Update Va controller
-        es_va[i] = lambd-gammas[i]
-        gammas[i+1], P,I,D = pid(i,es_va,gammas,Kp=Kp_va,Ki=Ki_va,Kd=Kd_va,int_win_size=win_size)
-
-        # clipping max va (relative to previous gamma[i])
-        delta_gamma = gammas[i+1] - gammas[i]
-        if delta_gamma > va_max:
-            gammas[i+1] = gammas[i] + va_max
-        elif delta_gamma < -va_max:
-            gammas[i+1] = gammas[i] - va_max
-
-        # Update Vs controller
-        es_vs[i] = lambd_vs-gammas[i]
-        e_primes[i+1], P_v, I_v, _ = pid(i,es_vs,zeros,Kp=Kp_vs,Ki=Ki_vs,Kd=Kd_vs,int_win_size=win_size)
-        d = np.linalg.norm(range_vec_unnorm)
-
-        # derived from ego equations
-        mag_vs[i] = d*(np.sin(es_vs[i]) - np.cos(es_vs[i])*np.tan(es_vs[i]-e_primes[i+1]))
-
-        # clipping max vs (is not relative to anything)
-        if mag_vs[i] > vs_max:
-            mag_vs[i] = vs_max
-        elif mag_vs[i] < -vs_max:
-            mag_vs[i] = -vs_max
-
-        # Update Process (kinematics): Va and Vs on left and right side of eq, respectively
-        # Note how Vs uses last gamma update "i" instead of "i+1", since controllers are independent 
-        x_change[i] = np.cos(gammas[i+1])*v_p[i] + mag_vs[i]*np.cos(gammas[i]+np.pi/2)
-        y_change[i] = np.sin(gammas[i+1])*v_p[i] + mag_vs[i]*np.sin(gammas[i]+np.pi/2)
-        
-        # need to normalize velocities (|va+vs| = |vp|*velocity ratio, always needs to be satisfied)
-        if va_ON == True and vs_ON == True:
-            rho, phi = util.cart2pol(x_change[i], y_change[i]) 
-            rho = v_p[i] # forcing it to not exceed stipulated magnitude of velocity
-
-            x_change[i], y_change[i] = util.pol2cart(rho, phi)
-
-        p_pos[0,i+1] = p_pos[0,i] + x_change[i]
-        p_pos[1,i+1] = p_pos[1,i] + y_change[i]
-
-    # store variables
-    lambds[i] = lambd
-    lambds_vs[i] = lambd_vs
-    P_va[i] = P
-    I_va[i] = I
-    D_va[i] = D
-    P_vs[i] = P_v
-    I_vs[i] = I_v
-
-    # Animation stuff
-    if animate == True:
-        
-        axes.scatter(p_pos[0,i], p_pos[1,i], c='xkcd:lime green', s = 6) # pursuer
-        ori = [p_pos[0,i]+np.cos(gammas[i])*10, p_pos[1,i]+np.sin(gammas[i])*10]
-        axes.plot([p_pos[0,i], ori[0]], [p_pos[1,i], ori[1]], c='white') # pursuers' ori
-
-        axes.scatter(sps[0,i], sps[1,i], c = 'xkcd:purple pink', s = 6) # target
-
-        if exp == True:
-            axes.scatter(fly_pos[0,i], fly_pos[1,i], c='xkcd:light cyan', s = 6) # real fly
-
-        axes.set_xlim([-20, dim_x+20])
-        axes.set_ylim([-20, dim_y+20])
-        axes.patch.set_facecolor('k')
-        fig.patch.set_facecolor('k')
-        axes.axis('off')
-        plt.pause(0.001)
-        fig.canvas.draw()
-
-        filename= fd_path+'gif_images/'+str(1000+i)+'.png'
-        plt.savefig(filename)
-        images.append(imageio.imread(filename))
-        axes.clear()
-
-if animate == True:
-    imageio.mimsave(fd_path + 'playground_figs/' + 'pursuit.gif', images)
+p_pos, lambds_va, lambds_vs, P_va, I_va, D_va, P_vs, \
+I_vs, es_vs, es_va, gammas, mag_vs = sim(sps, frame_len, va_ON, vs_ON, **input_dict)
 
 # %% Trajectories plot
 fig, axes = plt.subplots(figsize = (4,4))
 
+cmap = cm.get_cmap('Greens')
+
 axes.scatter(sps[0,:], sps[1,:], c = 'r', s = 2, label = 'target')
-axes.scatter(p_pos[0,:], p_pos[1,:], c = 'g', s = 2, label = 'pursuer')
+axes.scatter(p_pos[0,:], p_pos[1,:], c = cmap(0.9), s = 1, label = 'ahead')
 axes.set_xlim([0, dim_x+5])
 axes.set_ylim([0, dim_y+5])
 axes.axis('off')
@@ -402,8 +423,6 @@ v_a = np.rad2deg(v_a)/frame_len # convert to degree/sec to plot
 
 ax_angle.plot(ts[:-1],v_a[:-1],'xkcd:bright blue')
 ax_angle.set_ylabel('Va (°/s)')    
-ax_angle.set_title('Params: ' + 'Kp='+str(Kp_va) +' Ki='+str(Ki_va) +
-          ' int = '+str(round(win_size*frame_len*1000)) +'ms Kd='+str(Kd_va))
 ax_angle.set_xticks([], [])
 
 ax_error.axhline(0,c = 'r')
@@ -427,8 +446,6 @@ ax_control_vs = fig.add_subplot(spec[2:3, 4:])
 ax_vs.plot(ts,mag_vs*(1/frame_len),'xkcd:bright blue')
 ax_vs.set_ylabel('Vs (mm/s)')
 ax_vs.set_ylim([-10.5, 10.5])     
-ax_vs.set_title('Params: ' + 'Kp='+str(Kp_vs) +' Ki='+str(Ki_vs) +
-          ' int = '+str(round(win_size*frame_len*1000)) +' ms')
 ax_vs.set_xticks([], [])
 
 ax_error_vs.plot(ts, es_vs, 'xkcd:green', label='ss angle error = '+str(np.round(es_vs[-10],3)))
@@ -441,15 +458,12 @@ ax_control_vs.plot(ts,I_vs,label='Int')
 ax_control_vs.set_xlabel('Time (sec)')
 ax_control_vs.legend(loc='best',frameon=False)
 
-params =    'Kp='+str(Kp_va) +'_Ki='+str(Ki_va) +'_int_win_size='+str(win_size) \
-            +'_Kd='+str(Kd_va) + '_velratio='+str(vel_ratio) + '.png'
-
 if exp == True:
     path = fd_path + 'real_flies/va+vs_cont/parallel/'
 elif exp == False:
     path = fd_path + 'playground_figs/va+vs_cont/' + traj + '/'
 
 os.makedirs(path, exist_ok=True)
-fig.savefig(path + params)
+fig.savefig(path)
 
 # %%

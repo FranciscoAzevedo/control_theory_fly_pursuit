@@ -10,6 +10,7 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import math
 import os
+import util
 %matplotlib qt
 
 params = {'legend.fontsize': 'large',
