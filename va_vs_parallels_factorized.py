@@ -23,8 +23,8 @@ params = {'legend.fontsize': 'large',
          'axes.titlesize':'x-large',
          'xtick.labelsize':'x-large',
          'ytick.labelsize':'x-large',
-         'lines.linewidth': 1,
-         'figure.dpi': 120,
+         'lines.linewidth': 3,
+         'figure.dpi': 200,
          }
 
 plt.rcParams['font.family'] = 'serif'
@@ -74,8 +74,8 @@ def pid(iter,es,pvs, Kp=1,Ki=0,Kd=0,int_win_size=0):
 # %% Setting up playground and trajectory of target
 
 # lead_lag<0 means delayed, >0 means looking ahead
-lead_lag_va = 10
-lead_lag_vs = 0
+lead_lag_va = 0
+lead_lag_vs = 10
 
 # coordinate referential
 ref_vec = np.array([0.01,0]) # important that first value is small
@@ -372,10 +372,14 @@ def sim(sps, frame_len, va_ON, vs_ON, **input_dict):
 
 # %% Simulate
 va_ON = True
-vs_ON = False
+vs_ON = True
 
-input_dict = {  'init_x': dim_x, 
-                'init_y': 0}
+input_dict = {  'init_x': dim_x,
+                'init_y': 0,
+                'Ki_vs': 0.5,
+                'Kd_va': 0.5,
+                'vel_ratio': 1,
+                'anim': True}    
 
 p_pos, lambds_va, lambds_vs, P_va, I_va, D_va, P_vs, \
 I_vs, es_vs, es_va, gammas, mag_vs = sim(sps, frame_len, va_ON, vs_ON, **input_dict)
@@ -383,10 +387,10 @@ I_vs, es_vs, es_va, gammas, mag_vs = sim(sps, frame_len, va_ON, vs_ON, **input_d
 # %% Trajectories plot
 fig, axes = plt.subplots(figsize = (4,4))
 
-cmap = cm.get_cmap('Greens')
+cmap = cm.get_cmap('PiYG')
 
 axes.scatter(sps[0,:], sps[1,:], c = 'r', s = 2, label = 'target')
-axes.scatter(p_pos[0,:], p_pos[1,:], c = cmap(0.9), s = 1, label = 'ahead')
+axes.scatter(p_pos[0,:], p_pos[1,:], c = cmap(0.9), s = 1)
 axes.set_xlim([0, dim_x+5])
 axes.set_ylim([0, dim_y+5])
 axes.axis('off')
@@ -432,7 +436,6 @@ ax_error.legend(loc='best', frameon=False)
 ax_error.set_xticks([], [])
 
 ax_control.plot(ts,P_va,label='Prop')
-ax_control.plot(ts,I_va,label='Int')
 ax_control.plot(ts,D_va,label='Der')
 ax_control.set_ylabel("Controllers' effort")    
 ax_control.set_xlabel('Time (sec)')
